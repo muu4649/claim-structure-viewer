@@ -1,7 +1,8 @@
+import csv
 import io
 import re
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
 
 CLAIMS_START_MARKERS = (
@@ -31,6 +32,44 @@ def extract_uploaded_document(file_name: str, content: bytes) -> Dict[str, str]:
         "patent_number": detect_patent_number(raw_text, file_name),
         "source_name": file_name,
     }
+
+
+def extract_uploaded_documents(file_name: str, content: bytes) -> List[Dict[str, str]]:
+    suffix = Path(file_name or "").suffix.lower()
+    if suffix != ".csv":
+        return [extract_uploaded_document(file_name, content)]
+
+    text = decode_text(content)
+    rows = list(csv.DictReader(io.StringIO(text)))
+    if not rows:
+        return [extract_uploaded_document(file_name, content)]
+
+    patent_keys = ("patent_number", "publication_number", "特許番号", "公開番号", "文献番号")
+    claim_number_keys = ("claim_number", "請求項番号", "claim")
+    claim_text_keys = ("claim_text", "claims_text", "請求項", "請求項本文", "text")
+    grouped = {}
+
+    for row_index, row in enumerate(rows, start=1):
+        patent_number = _first_value(row, patent_keys) or f"{Path(file_name).stem}-{row_index}"
+        claim_text = _first_value(row, claim_text_keys)
+        if not claim_text:
+            continue
+        claim_number = _first_value(row, claim_number_keys)
+        if claim_number and not re.search(r"【\s*請求項", claim_text):
+            claim_text = f"【請求項{claim_number}】\n{claim_text}"
+        grouped.setdefault(patent_number, []).append(claim_text)
+
+    if not grouped:
+        return [extract_uploaded_document(file_name, content)]
+
+    return [
+        {
+            "claims_text": "\n".join(claims),
+            "patent_number": patent_number,
+            "source_name": file_name,
+        }
+        for patent_number, claims in grouped.items()
+    ]
 
 
 def extract_pdf_text(content: bytes) -> str:
@@ -71,7 +110,11 @@ def extract_claims_section(raw_text: str) -> str:
             continue
         if re.fullmatch(r"\(\d+\)", line):
             continue
-        if re.fullmatch(r"JP\d{6,9}[A-Z]\d.*", line, flags=re.IGNORECASE):
+        if re.fullmatch(
+            r"(?:\(\d+\))?JP\d{6,9}[A-Z]\d.*",
+            line,
+            flags=re.IGNORECASE,
+        ):
             continue
         if re.fullmatch(r"(?:10|20|30|40|50)", line):
             continue
@@ -115,3 +158,11 @@ def detect_patent_number(raw_text: str, file_name: str = "") -> str:
 def _first_marker_index(text: str, markers) -> int:
     positions = [text.find(marker) for marker in markers if text.find(marker) >= 0]
     return min(positions) if positions else -1
+
+
+def _first_value(row: Dict[str, str], keys) -> str:
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""

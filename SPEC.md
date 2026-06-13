@@ -1,5 +1,9 @@
 # ClaimGraph Viewer MVP仕様
 
+この文書は現行プロトタイプの仕様を記録する。次期版の主仕様は
+[ANALYST_PRODUCT_STRATEGY.md](ANALYST_PRODUCT_STRATEGY.md) とし、複数特許の
+クレーム類似度、方向付き要件カバレッジ、ペア対比を中心に再設計する。
+
 ## 情報モデル
 
 ```text
