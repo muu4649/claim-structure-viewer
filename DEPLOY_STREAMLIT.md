@@ -11,6 +11,7 @@ GitHubリポジトリにする。
 claim-structure-viewer/
 ├── .streamlit/config.toml
 ├── app.js
+├── document_import.py
 ├── index.html
 ├── requirements.txt
 ├── streamlit_app.py
@@ -60,6 +61,6 @@ git push
 ## 情報管理
 
 - 生成AI・外部解析APIは使用していない。
-- 請求項入力は埋め込み画面内のJavaScriptで処理する。
+- PDF/TXTはStreamlitサーバー上で請求項部分を抽出し、構造解析は埋め込み画面内のJavaScriptで処理する。
 - Community Cloudは外部クラウドサービスであるため、未公開出願や秘密情報の
   入力可否は所属組織の情報管理基準に従う。

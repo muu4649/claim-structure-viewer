@@ -51,9 +51,11 @@ const els = {};
 document.addEventListener("DOMContentLoaded", () => {
   [
     "patentNumber", "inventionTitle", "claimText", "loadDemo", "analyzeClaims",
+    "inputSource", "inputStatus",
     "workspace", "claimTotal", "claimList", "selectedClaimMeta", "selectedClaimTitle",
     "selectedClaimBadges", "selectedClaimText", "depthMetric", "ownMetric",
     "inheritedMetric", "opennessMetric", "layerColumns", "patchList",
+    "focusClaimButtons", "focusClaimGraph", "lineageComparison",
     "requirementEditor", "addRequirement", "macroMetrics", "claimTree", "scopeBars",
     "claimMatrix", "strategyList", "dslOutput", "copyDsl", "exportJson", "exportDsl",
     "exportTraining",
@@ -67,6 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   els.analyzeClaims.addEventListener("click", analyze);
   els.claimList.addEventListener("click", handleClaimSelection);
+  els.focusClaimButtons.addEventListener("click", handleFocusClaimSelection);
+  els.focusClaimGraph.addEventListener("click", handleFocusGraphSelection);
   els.claimTree.addEventListener("click", handleTreeSelection);
   els.requirementEditor.addEventListener("input", handleRequirementInput);
   els.requirementEditor.addEventListener("change", handleRequirementEdit);
@@ -82,22 +86,45 @@ document.addEventListener("DOMContentLoaded", () => {
     button.addEventListener("click", () => switchView(button.dataset.view));
   });
 
-  loadDemo();
-  analyze();
+  const imported = window.CLAIMGRAPH_IMPORT || {};
+  if (imported.claimsText) {
+    els.patentNumber.value = imported.patentNumber || "";
+    els.inventionTitle.value = imported.inventionTitle || "";
+    els.claimText.value = imported.claimsText;
+    els.inputSource.textContent = imported.sourceName
+      ? `インポート済み: ${imported.sourceName}`
+      : "インポート済み文書";
+    els.inputStatus.textContent = "請求項部分を抽出しました。構造解析結果を表示しています。";
+    analyze();
+  } else {
+    els.patentNumber.value = "";
+    els.inventionTitle.value = "";
+    els.claimText.value = "";
+    els.workspace.hidden = true;
+  }
 });
 
 function loadDemo() {
   els.patentNumber.value = "JP7362171B1";
   els.inventionTitle.value = "指紋認証用シート状貼付体";
   els.claimText.value = DEMO_CLAIMS;
+  els.inputSource.textContent = "テスト出力: JP7362171B1";
+  els.inputStatus.textContent = "検証用データを読み込みました。通常の分析対象とは分けて扱ってください。";
 }
 
 function analyze() {
   state.claims = parseClaims(els.claimText.value);
+  if (!state.claims.size) {
+    els.workspace.hidden = true;
+    els.inputStatus.textContent = "請求項を入力してから「構造を解析」を押してください。";
+    return;
+  }
   enrichClaims();
   state.selectedClaim = state.claims.has(state.selectedClaim)
     ? state.selectedClaim
     : [...state.claims.keys()][0] || 1;
+  els.workspace.hidden = false;
+  els.inputStatus.textContent = `${state.claims.size}件の請求項を解析しました。請求項ボタンで表示対象を切り替えられます。`;
   renderAll();
 }
 
@@ -431,6 +458,18 @@ function handleClaimSelection(event) {
   selectClaim(Number(button.dataset.claimNumber));
 }
 
+function handleFocusClaimSelection(event) {
+  const button = event.target.closest("[data-focus-claim-number]");
+  if (!button) return;
+  selectClaim(Number(button.dataset.focusClaimNumber));
+}
+
+function handleFocusGraphSelection(event) {
+  const node = event.target.closest("[data-focus-graph-claim]");
+  if (!node) return;
+  selectClaim(Number(node.dataset.focusGraphClaim));
+}
+
 function handleTreeSelection(event) {
   const node = event.target.closest("[data-tree-claim]");
   if (!node) return;
@@ -466,7 +505,264 @@ function renderDetail() {
   els.opennessMetric.textContent = `${claim.openness}/100`;
   renderLayers(claim, inherited);
   renderPatches(claim);
+  renderFocusClaimButtons();
+  renderFocusGraph(claim);
+  renderLineageComparison(claim);
   renderRequirementEditor(claim);
+}
+
+function renderFocusClaimButtons() {
+  els.focusClaimButtons.innerHTML = [...state.claims.values()].map((claim) => `
+    <button class="${claim.number === state.selectedClaim ? "active" : ""}"
+      data-focus-claim-number="${claim.number}" type="button">
+      請求項${claim.number}
+      <small>${claim.independent ? "独立" : `→ ${claim.parents.join(", ")}`}</small>
+    </button>
+  `).join("");
+}
+
+function getClaimLineage(claim) {
+  if (!claim) return [];
+  const lineageNumbers = new Set();
+  const visit = (number) => {
+    if (lineageNumbers.has(number)) return;
+    const current = state.claims.get(number);
+    if (!current) return;
+    current.parents.forEach(visit);
+    lineageNumbers.add(number);
+  };
+
+  visit(claim.number);
+  if (state.claims.has(1)) lineageNumbers.add(1);
+  return [...lineageNumbers]
+    .map((number) => state.claims.get(number))
+    .filter(Boolean)
+    .sort((a, b) => a.depth - b.depth || a.number - b.number);
+}
+
+function getRootSubject() {
+  const claimOne = state.claims.get(1) || [...state.claims.values()][0];
+  if (!claimOne) return "請求項1の主体";
+  const category = claimOne.requirements.find((item) => item.role === "category");
+  return category?.concept || extractClaimSubject(claimOne.text, claimOne.type);
+}
+
+function extractClaimSubject(text, claimType = "product") {
+  const clean = String(text || "")
+    .replace(/請求項[^。]+に記載の/g, "")
+    .replace(/[。；;]/g, "。");
+  const suffix = claimType === "method"
+    ? /([一-龠ァ-ンA-Za-z0-9ー]{1,24}(?:製造方法|方法|工程))/g
+    : /([一-龠ァ-ンA-Za-z0-9ー]{1,24}(?:システム|プログラム|組成物|貼付体|装置|部材|構造体|物))/g;
+  const matches = [...clean.matchAll(suffix)];
+  if (matches.length) return matches.at(-1)[1].replace(/^(?:前記|当該)/, "");
+  return claimType === "method" ? "方法" : "請求項1の主体";
+}
+
+function buildFocusModel(claim) {
+  const lineage = getClaimLineage(claim);
+  const rootSubject = getRootSubject();
+  const rows = [];
+  const conceptNodes = new Map();
+
+  lineage.forEach((sourceClaim) => {
+    sourceClaim.requirements.forEach((requirement) => {
+      const key = `claim-${sourceClaim.number}-${requirement.id}`;
+      const ownConcept = normalizeConcept(requirement.concept);
+      const references = [...conceptNodes.entries()]
+        .filter(([concept]) =>
+          concept &&
+          normalizeConcept(requirement.text).includes(concept),
+        )
+        .map(([, node]) => node);
+      const parent = references.at(-1);
+      const selected = sourceClaim.number === claim.number;
+      const root = sourceClaim.number === 1;
+      const patch = root
+        ? "base"
+        : selected && !claim.independent
+          ? classifyPatch(requirement, claim)
+          : "inherit";
+      const row = {
+        key,
+        sourceClaim: sourceClaim.number,
+        requirement,
+        selected,
+        root,
+        patch,
+        parentKey: parent?.key || `claim-${sourceClaim.number}`,
+        parentLabel: parent?.label || (sourceClaim.number === 1 ? rootSubject : `請求項${sourceClaim.number}`),
+      };
+      rows.push(row);
+      if (ownConcept) {
+        conceptNodes.set(ownConcept, {
+          key,
+          label: requirement.concept,
+          sourceClaim: sourceClaim.number,
+        });
+      }
+    });
+  });
+
+  return { lineage, rootSubject, rows };
+}
+
+function renderFocusGraph(claim) {
+  const svg = els.focusClaimGraph;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const model = buildFocusModel(claim);
+  const columnWidth = 285;
+  const nodeWidth = 236;
+  const nodeHeight = 54;
+  const top = 34;
+  const requirementTop = 124;
+  const rowGap = 68;
+  const rowsByClaim = new Map(
+    model.lineage.map((item) => [
+      item.number,
+      model.rows.filter((row) => row.sourceClaim === item.number),
+    ]),
+  );
+  const maxRows = Math.max(1, ...[...rowsByClaim.values()].map((rows) => rows.length));
+  const width = Math.max(920, model.lineage.length * columnWidth + 70);
+  const height = Math.max(390, requirementTop + maxRows * rowGap + 40);
+  const positions = new Map();
+
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.height = `${height}px`;
+
+  model.lineage.forEach((sourceClaim, columnIndex) => {
+    const x = 34 + columnIndex * columnWidth;
+    positions.set(`claim-${sourceClaim.number}`, { x, y: top });
+    rowsByClaim.get(sourceClaim.number).forEach((row, rowIndex) => {
+      positions.set(row.key, { x, y: requirementTop + rowIndex * rowGap });
+    });
+  });
+
+  model.lineage.forEach((sourceClaim) => {
+    if (sourceClaim.number === 1) return;
+    const child = positions.get(`claim-${sourceClaim.number}`);
+    const parentNumbers = sourceClaim.parents.filter((number) =>
+      positions.has(`claim-${number}`),
+    );
+    const visibleParents = parentNumbers.length ? parentNumbers : [1];
+    visibleParents.forEach((parentNumber) => {
+      const parent = positions.get(`claim-${parentNumber}`);
+      if (!parent || !child) return;
+      svg.append(svgElement("path", {
+        d: focusEdgePath(parent, child, nodeWidth, nodeHeight),
+        class: `focus-edge ${sourceClaim.parents.length ? "" : "target-edge"}`,
+      }));
+      const label = svgElement("text", {
+        x: String((parent.x + nodeWidth + child.x) / 2),
+        y: String(top + 20),
+        class: "focus-edge-label",
+      });
+      label.textContent = sourceClaim.parents.length ? "継承" : "対象";
+      svg.append(label);
+    });
+  });
+
+  model.rows.forEach((row) => {
+    const parent = positions.get(row.parentKey) || positions.get(`claim-${row.sourceClaim}`);
+    const child = positions.get(row.key);
+    if (!parent || !child) return;
+    const nested = row.parentKey.startsWith("claim-") && row.parentKey.split("-").length > 2;
+    svg.append(svgElement("path", {
+      d: nested
+        ? `M ${parent.x + nodeWidth / 2} ${parent.y + nodeHeight} C ${parent.x + nodeWidth / 2} ${child.y - 18}, ${child.x + nodeWidth / 2} ${child.y - 18}, ${child.x + nodeWidth / 2} ${child.y}`
+        : `M ${parent.x + 26} ${parent.y + nodeHeight} L ${parent.x + 26} ${child.y - 12} Q ${parent.x + 26} ${child.y} ${parent.x + 38} ${child.y} L ${child.x} ${child.y}`,
+      class: `focus-edge requirement-edge ${nested ? "reference-edge" : ""}`,
+    }));
+  });
+
+  model.lineage.forEach((sourceClaim) => {
+    const position = positions.get(`claim-${sourceClaim.number}`);
+    const root = sourceClaim.number === 1;
+    const selected = sourceClaim.number === claim.number;
+    const group = svgElement("g", {
+      class: `focus-node claim-node ${root ? "root-node" : ""} ${selected ? "selected-node" : "inherited-node"}`,
+      "data-focus-graph-claim": String(sourceClaim.number),
+      transform: `translate(${position.x},${position.y})`,
+      role: "button",
+      tabindex: "0",
+    });
+    group.append(svgElement("rect", { width: String(nodeWidth), height: String(nodeHeight) }));
+    const label = svgElement("text", { x: "14", y: "21", class: "focus-node-title" });
+    label.textContent = root
+      ? `請求項1 主体 · ${truncate(model.rootSubject, 18)}`
+      : `請求項${sourceClaim.number} · ${selected ? "選択中" : "継承元"}`;
+    const sub = svgElement("text", { x: "14", y: "40", class: "focus-node-sub" });
+    sub.textContent = root
+      ? "固定ルート"
+      : `${typeLabel(sourceClaim.type)} / ${summarizePatch(sourceClaim).slice(0, 24)}`;
+    group.append(label, sub);
+    svg.append(group);
+  });
+
+  model.rows.forEach((row) => {
+    const position = positions.get(row.key);
+    const group = svgElement("g", {
+      class: `focus-node requirement-node ${row.selected ? "selected-requirement" : "inherited-requirement"} role-${row.requirement.role}`,
+      transform: `translate(${position.x},${position.y})`,
+    });
+    group.append(svgElement("rect", { width: String(nodeWidth), height: String(nodeHeight) }));
+    const title = svgElement("text", { x: "13", y: "20", class: "focus-node-title" });
+    title.textContent = `${row.requirement.id} · ${truncate(row.requirement.concept, 18)}`;
+    const sub = svgElement("text", { x: "13", y: "39", class: "focus-node-sub" });
+    sub.textContent = `${roleLabel(row.requirement.role)} / ${truncate(row.requirement.text, 23)}`;
+    group.append(title, sub);
+    svg.append(group);
+  });
+}
+
+function focusEdgePath(parent, child, nodeWidth, nodeHeight) {
+  return `M ${parent.x + nodeWidth} ${parent.y + nodeHeight / 2} C ${parent.x + nodeWidth + 28} ${parent.y + nodeHeight / 2}, ${child.x - 28} ${child.y + nodeHeight / 2}, ${child.x} ${child.y + nodeHeight / 2}`;
+}
+
+function renderLineageComparison(claim) {
+  const model = buildFocusModel(claim);
+  if (!model.rows.length) {
+    els.lineageComparison.innerHTML = '<div class="empty">構成要件がありません。</div>';
+    return;
+  }
+  const rows = model.rows.map((row) => {
+    const status = row.root
+      ? "基底"
+      : row.selected
+        ? (row.patch === "add" ? "追加" : row.patch === "limit" ? "限定" : row.patch === "replace" ? "置換" : row.patch === "exclude" ? "除外" : "固有")
+        : "継承";
+    return `
+      <tr class="${row.selected ? "selected-comparison-row" : ""}">
+        <td>請求項${row.sourceClaim}</td>
+        <td><span class="comparison-status status-${escapeHtml(row.patch)}">${escapeHtml(status)}</span></td>
+        <td>${escapeHtml(row.requirement.id)}</td>
+        <td><strong>${escapeHtml(row.requirement.concept)}</strong></td>
+        <td>${escapeHtml(roleLabel(row.requirement.role))}</td>
+        <td>${escapeHtml(CATEGORY_META[row.requirement.category]?.label || "構造")}</td>
+        <td>${escapeHtml(row.parentLabel)}</td>
+        <td class="comparison-text">${escapeHtml(row.requirement.text)}</td>
+      </tr>
+    `;
+  }).join("");
+  els.lineageComparison.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>起源</th>
+          <th>選択項との関係</th>
+          <th>ID</th>
+          <th>構成要素</th>
+          <th>構成タイプ</th>
+          <th>意味層</th>
+          <th>上位要素・入れ子先</th>
+          <th>要件文</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 function getInheritedRequirements(claim, seen = new Set()) {
@@ -534,7 +830,10 @@ function classifyPatch(requirement, claim) {
   const inheritedConcepts = new Set(getInheritedRequirements(claim).map((item) => normalizeConcept(item.concept)));
   const concept = normalizeConcept(requirement.concept);
   if (/除く|含まない|でない/.test(requirement.text)) return "exclude";
-  if (/複数|一対|置換|代えて/.test(requirement.text) && [...inheritedConcepts].some((item) => concept.includes(item) || item.includes(concept))) return "replace";
+  if (
+    /置換|代えて|複数(?:設け|の)/.test(requirement.text) &&
+    [...inheritedConcepts].some((item) => concept.includes(item) || item.includes(concept))
+  ) return "replace";
   if (inheritedConcepts.has(concept) || requirement.category === "condition") return "limit";
   return "add";
 }
@@ -949,6 +1248,11 @@ function escapeDsl(value) {
 
 function safeName(value) {
   return String(value || "claimgraph").replace(/[\\/:*?"<>|]/g, "_");
+}
+
+function truncate(value, maxLength) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
 function toAsciiDigits(value) {

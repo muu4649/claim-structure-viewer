@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="請求項を構造・機能・動態・差分として読む、生成AI非依存のクレーム構造ビューア">
   <title>ClaimGraph Viewer</title>
-  <link rel="stylesheet" href="styles-v2.css?v=20260613h">
+  <link rel="stylesheet" href="styles-v2.css?v=20260613i">
 </head>
 <body>
   <header class="topbar">
@@ -48,21 +48,33 @@
       <div class="section-title">
         <div>
           <p class="eyebrow">INPUT</p>
-          <h2>請求項テキスト</h2>
+          <h2>文書入力</h2>
         </div>
         <div class="input-buttons">
-          <button class="button secondary" id="loadDemo" type="button">JP7362171B1簡易デモ</button>
           <button class="button primary" id="analyzeClaims" type="button">構造を解析</button>
         </div>
+      </div>
+      <div class="import-banner">
+        <div>
+          <strong id="inputSource">請求項テキストを貼り付けるか、上部からPDF/TXTをインポート</strong>
+          <span id="inputStatus">入力内容はこの画面内でルール解析されます。</span>
+        </div>
+        <details class="demo-drawer">
+          <summary>テスト出力を開く</summary>
+          <div>
+            <p>JP7362171B1の検証用データです。通常の分析対象とは分けて表示します。</p>
+            <button class="button secondary" id="loadDemo" type="button">JP7362171B1を読み込む</button>
+          </div>
+        </details>
       </div>
       <div class="meta-grid">
         <label>
           <span>特許・案件番号</span>
-          <input id="patentNumber" value="JP7362171B1">
+          <input id="patentNumber" placeholder="例: JP7362171B1">
         </label>
         <label>
           <span>発明名称</span>
-          <input id="inventionTitle" value="指紋認証用シート状貼付体">
+          <input id="inventionTitle" placeholder="発明名称または案件名">
         </label>
       </div>
       <label>
@@ -75,7 +87,7 @@
       </p>
     </section>
 
-    <section class="workspace" id="workspace">
+    <section class="workspace" id="workspace" hidden>
       <nav class="view-tabs" aria-label="分析ビュー">
         <button class="active" data-view="detail" type="button">詳細分析</button>
         <button data-view="macro" type="button">マクロ分析</button>
@@ -133,6 +145,37 @@
                 </div>
                 <div class="patch-list" id="patchList"></div>
               </section>
+            </section>
+
+            <section class="panel focus-panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">SELECTED CLAIM STRUCTURE</p>
+                  <h2>選択請求項の継承・入れ子構造</h2>
+                </div>
+                <span class="fixed-root-note">請求項1の主体を固定ルートとして表示</span>
+              </div>
+              <div class="focus-claim-buttons" id="focusClaimButtons"></div>
+              <div class="focus-legend">
+                <span><i class="legend-root"></i>固定主体</span>
+                <span><i class="legend-inherited"></i>継承</span>
+                <span><i class="legend-selected"></i>選択項の追加・限定</span>
+                <span><i class="legend-reference"></i>要素参照</span>
+              </div>
+              <div class="focus-graph-wrap">
+                <svg id="focusClaimGraph" role="img" aria-label="選択請求項の継承・入れ子構造"></svg>
+              </div>
+              <p class="proxy-note">選択した請求項とその祖先だけを表示します。要素間の入れ子は、要件文中の「前記」参照と要素名の出現順による構造推定です。</p>
+            </section>
+
+            <section class="panel comparison-panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">LINEAGE COMPARISON</p>
+                  <h2>選択請求項の継承対比表</h2>
+                </div>
+              </div>
+              <div class="comparison-wrap" id="lineageComparison"></div>
             </section>
 
             <section class="panel editor-panel">
@@ -226,6 +269,6 @@
     <span>権利範囲・侵害・有効性を自動判断するものではありません。</span>
   </footer>
 
-  <script src="app.js?v=20260613h"></script>
+  <script src="app.js?v=20260613i"></script>
 </body>
 </html>

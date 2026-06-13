@@ -216,3 +216,33 @@ test("人手修正結果を8請求項分の学習JSONLへ変換する", () => {
   assert.equal(result[0].roles[0], "category");
   assert.equal(result[7].requirements.length, 2);
 });
+
+test("選択請求項だけの系譜を請求項1の主体から構築する", () => {
+  const result = runInApp(
+    `(() => {
+      state.claims = parseClaims(globalThis.__fixture);
+      enrichClaims();
+      const model = buildFocusModel(state.claims.get(5));
+      return {
+        rootSubject: model.rootSubject,
+        lineage: model.lineage.map((claim) => claim.number),
+        sourceClaims: [...new Set(model.rows.map((row) => row.sourceClaim))],
+        selectedRows: model.rows
+          .filter((row) => row.selected)
+          .map((row) => ({
+            concept: row.requirement.concept,
+            parentLabel: row.parentLabel,
+            patch: row.patch,
+          })),
+      };
+    })()`,
+    { __fixture: fixture },
+  );
+
+  assert.equal(result.rootSubject, "貼付体");
+  assert.deepEqual(result.lineage, [1, 4, 5]);
+  assert.deepEqual(result.sourceClaims, [1, 4, 5]);
+  assert.equal(result.selectedRows[0].concept, "一対の境界線");
+  assert.equal(result.selectedRows[0].parentLabel, "一対の境界線");
+  assert.equal(result.selectedRows[0].patch, "limit");
+});
