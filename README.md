@@ -1,0 +1,61 @@
+# ClaimGraph Viewer
+
+添付資料「ClaimGraph 設計思想と仕様」を、生成AIを使わずに動かすWebプロトタイプです。
+
+## 起動
+
+```bash
+cd "/Users/uemurayuutarou/Documents/特許分析/claim-structure-viewer"
+python3 -m http.server 8767
+```
+
+ブラウザで `http://localhost:8767` を開きます。
+
+### Streamlit版
+
+```bash
+cd "/Users/uemurayuutarou/Documents/特許分析/claim-structure-viewer"
+streamlit run streamlit_app.py
+```
+
+Streamlit Community Cloudでは、GitHubリポジトリを接続し、
+Main file pathに `claim-structure-viewer/streamlit_app.py` を指定します。
+入力した請求項は埋め込み画面内のJavaScriptで解析し、生成AIや外部APIへ送信しません。
+独立リポジトリとして配備する場合のMain file pathは `streamlit_app.py` です。
+詳しい手順は [DEPLOY_STREAMLIT.md](DEPLOY_STREAMLIT.md) を参照してください。
+
+## 目的
+
+- 詳細分析: 親クレームとの差分、継承要件、請求対象・要素・属性・関係・工程・機能効果を読む
+- マクロ分析: 従属ツリー、構成要件マトリクス、相対限定度、出願戦略上の観察事項を俯瞰する
+- 共通モデル: 編集した構成要件をすべてのビューとClaimGraph DSLへ反映する
+
+## 解析方法
+
+- 正規表現による請求項番号・依存請求項の抽出
+- `【請求項1】`形式と「請求項1」改行形式の見出しに対応
+- 固定ルールによる物・方法・システムの分類
+- 製品クレーム群を対象にする独立方法クレームを、従属関係と分けて保持
+- 請求対象、列挙終端、述語完結、次主語の開始による構成単位の分割
+- `Aと、Bと、Cを備える` の接続表現を残した原文保持型の切り出し
+- 境界ごとの分割根拠・信頼度表示
+- 過分割の結合と、人手修正結果の学習用JSONL出力
+- 請求対象・要素・属性・関係・工程・機能効果の仮分類と手動修正
+- キーワードによる構造・機能・動態・条件の仮分類
+- 親からの継承と固有要件による差分表示
+- 依存深度と追加要件数による「構造的広がり」代理指標
+
+生成AI、埋め込みモデル、機械学習分類器、外部APIは使用していません。
+
+現在のオンライン解析は構文ルール版です。非生成型BERT境界分類器の設計と
+学習スクリプトは [MODEL_PLAN.md](MODEL_PLAN.md) と
+`ml/train_boundary_classifier.py` にあります。
+分割の参照資料と実装原則は [REFERENCE_NOTES.md](REFERENCE_NOTES.md) にまとめています。
+
+## 重要な制約
+
+- 自動分割と意味分類は下書きであり、人による修正が必要です。
+- 相対限定度・構造的広がりは法的な権利範囲の広狭ではありません。
+- 出願戦略上の観察事項は確認観点であり、推奨や法的助言ではありません。
+- 独立項の構成要件間の正確な包含・空間関係は、現段階では完全自動抽出しません。
+- Community Cloudの無料公開URLへ未公開出願や秘密情報を入力する運用は、組織の情報管理基準を別途確認してください。

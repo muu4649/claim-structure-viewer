@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="請求項を構造・機能・動態・差分として読む、生成AI非依存のクレーム構造ビューア">
+  <title>ClaimGraph Viewer</title>
+    <link rel="stylesheet" href="styles-v2.css?v=20260613g">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top">
+      <span class="brand-mark">CG</span>
+      <span>
+        <strong>ClaimGraph Viewer</strong>
+        <small>クレームを、文章から構造へ。</small>
+      </span>
+    </a>
+    <div class="top-actions">
+      <span class="local-pill"><i></i> Local / No Generative AI</span>
+      <button class="button ghost" id="exportTraining" type="button">学習データ</button>
+      <button class="button secondary" id="exportJson" type="button">構造JSON</button>
+      <button class="button dark" id="exportDsl" type="button">ClaimGraph DSL</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div>
+        <div class="hero-kicker"><span>CLAIM INTELLIGENCE</span><b>Rule Engine v0.3</b></div>
+        <h1>権利範囲を、<br><em>構造で読む。</em></h1>
+        <p class="lead">
+          独立項の構成、従属項の追加・限定、状態変化、数値条件を一つの意味モデルに変換。
+          詳細分析と出願全体のマクロ分析を同じ画面で往復します。
+        </p>
+        <div class="hero-tags">
+          <span>構成単位解析</span><span>差分モデル</span><span>BERT学習データ対応</span>
+        </div>
+      </div>
+      <div class="hero-principles">
+        <article><b>01</b><span>従属項は親へのパッチとして読む</span></article>
+        <article><b>02</b><span>構造・機能・動態を分離する</span></article>
+        <article><b>03</b><span>図ではなく意味構造を保存する</span></article>
+      </div>
+    </section>
+
+    <section class="input-panel panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">INPUT</p>
+          <h2>請求項テキスト</h2>
+        </div>
+        <div class="input-buttons">
+          <button class="button secondary" id="loadDemo" type="button">JP7362171B1簡易デモ</button>
+          <button class="button primary" id="analyzeClaims" type="button">構造を解析</button>
+        </div>
+      </div>
+      <div class="meta-grid">
+        <label>
+          <span>特許・案件番号</span>
+          <input id="patentNumber" value="JP7362171B1">
+        </label>
+        <label>
+          <span>発明名称</span>
+          <input id="inventionTitle" value="指紋認証用シート状貼付体">
+        </label>
+      </div>
+      <label>
+        <span>全請求項</span>
+        <textarea id="claimText" spellcheck="false"></textarea>
+      </label>
+      <p class="input-note">
+        請求対象・列挙・述語完結・次主語の開始を組み合わせ、原文語句を保って分割します。
+        構成タイプは請求対象・要素・属性・関係・工程・機能／効果から修正できます。
+      </p>
+    </section>
+
+    <section class="workspace" id="workspace">
+      <nav class="view-tabs" aria-label="分析ビュー">
+        <button class="active" data-view="detail" type="button">詳細分析</button>
+        <button data-view="macro" type="button">マクロ分析</button>
+        <button data-view="dsl" type="button">ClaimGraph DSL</button>
+      </nav>
+
+      <div class="app-shell">
+        <aside class="claim-sidebar panel">
+          <div class="sidebar-head">
+            <div>
+              <p class="eyebrow">CLAIMS</p>
+              <h2>請求項</h2>
+            </div>
+            <span id="claimTotal">0</span>
+          </div>
+          <div class="claim-list" id="claimList"></div>
+        </aside>
+
+        <section class="view-stage">
+          <div class="view active" id="detailView">
+            <section class="panel claim-overview">
+              <div class="claim-title-row">
+                <div>
+                  <p class="eyebrow" id="selectedClaimMeta">CLAIM</p>
+                  <h2 id="selectedClaimTitle">請求項を選択</h2>
+                </div>
+                <div class="claim-badges" id="selectedClaimBadges"></div>
+              </div>
+              <blockquote id="selectedClaimText"></blockquote>
+              <div class="metric-row">
+                <article><span>依存深度</span><strong id="depthMetric">-</strong></article>
+                <article><span>固有要件</span><strong id="ownMetric">-</strong></article>
+                <article><span>継承要件</span><strong id="inheritedMetric">-</strong></article>
+                <article><span>構造的広がり</span><strong id="opennessMetric">-</strong></article>
+              </div>
+            </section>
+
+            <section class="detail-grid">
+              <section class="panel">
+                <div class="section-title compact">
+                  <div>
+                    <p class="eyebrow">THREE-LAYER MODEL</p>
+                    <h2>意味レイヤー</h2>
+                  </div>
+                </div>
+                <div class="layer-columns" id="layerColumns"></div>
+              </section>
+
+              <section class="panel">
+                <div class="section-title compact">
+                  <div>
+                    <p class="eyebrow">CLAIM AS DIFF</p>
+                    <h2>親との差分</h2>
+                  </div>
+                </div>
+                <div class="patch-list" id="patchList"></div>
+              </section>
+            </section>
+
+            <section class="panel editor-panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">HUMAN-IN-THE-LOOP</p>
+                  <h2>構成要件エディタ</h2>
+                </div>
+                <button class="button secondary" id="addRequirement" type="button">要件を追加</button>
+              </div>
+              <div class="requirement-editor" id="requirementEditor"></div>
+              <p class="editor-hint">過分割は「次と結合」、不足分は「要件を追加」で補正できます。修正内容は全ビューへ即時反映されます。</p>
+            </section>
+          </div>
+
+          <div class="view" id="macroView">
+            <section class="macro-metrics" id="macroMetrics"></section>
+
+            <div class="macro-grid">
+              <section class="panel">
+                <div class="section-title compact">
+                  <div>
+                    <p class="eyebrow">DEPENDENCY GRAPH</p>
+                    <h2>請求項ツリー</h2>
+                  </div>
+                </div>
+                <div class="tree-wrap">
+                  <svg id="claimTree" role="img" aria-label="請求項の従属関係"></svg>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="section-title compact">
+                  <div>
+                    <p class="eyebrow">STRUCTURAL OPENNESS</p>
+                    <h2>相対限定度</h2>
+                  </div>
+                </div>
+                <p class="proxy-note">
+                  親から追加された要件数・依存深度による構造上の代理指標です。法的な権利範囲の広狭ではありません。
+                </p>
+                <div class="scope-bars" id="scopeBars"></div>
+              </section>
+            </div>
+
+            <section class="panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">COVERAGE MATRIX</p>
+                  <h2>構成要件 × 請求項</h2>
+                </div>
+              </div>
+              <div class="matrix-wrap" id="claimMatrix"></div>
+            </section>
+
+            <section class="panel strategy-panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">STRATEGY OBSERVATIONS</p>
+                  <h2>出願戦略上の観察事項</h2>
+                </div>
+              </div>
+              <div class="strategy-list" id="strategyList"></div>
+              <p class="proxy-note">構造的特徴から生成した確認観点であり、法律・出願戦略上の結論ではありません。</p>
+            </section>
+          </div>
+
+          <div class="view" id="dslView">
+            <section class="panel">
+              <div class="section-title compact">
+                <div>
+                  <p class="eyebrow">RULE-BASED DRAFT</p>
+                  <h2>ClaimGraph DSL</h2>
+                </div>
+                <button class="button secondary" id="copyDsl" type="button">コピー</button>
+              </div>
+              <pre class="dsl-output"><code id="dslOutput"></code></pre>
+              <p class="proxy-note">
+                ルール解析による下書きです。`component`、`limit`、`replace`等の意味分類は人による確認・修正を前提とします。
+              </p>
+            </section>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <strong>ClaimGraph Viewer</strong>
+    <span>Rule-based prototype / 2026-06-13</span>
+    <span>権利範囲・侵害・有効性を自動判断するものではありません。</span>
+  </footer>
+
+    <script src="app.js?v=20260613g"></script>
+</body>
+</html>
